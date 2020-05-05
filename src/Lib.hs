@@ -1,6 +1,6 @@
 module Lib
 ( printBoard
-  , choseSide
+  , chooseSide
   , mainLoop
   ) where
 
@@ -33,12 +33,12 @@ newBoard = [B,B,B,B,B,B,B,B,B]
 winBoard = [X,B,O,O,X,O,B,B,X]
 
 --- functions ---
-choseSide :: Char -> IO Char
-choseSide x = if x `elem` ['X','O']
-  then  return x
-  else  putStrLn "Choose a side (X) or (O)" >> getChar >>= choseSide 
+chooseSide :: Char -> IO Char
+chooseSide x = if toUpper x `elem` ['X','O']
+  then  return $ toUpper x
+  else  putStrLn "Choose a side (X) or (O)" >> getChar >>= chooseSide 
 
-mainLoop s = evalStateT play (initState s) 
+mainLoop = evalStateT play . initState
 
 play :: StateT GameState IO (Board,Side)
 play = 
@@ -73,7 +73,7 @@ safeHead x | null x = Nothing
            | otherwise     = Just $ head x
 randomMove st = do
     newSquare <- (-1 +) <$> randomRIO(1, length blank)  
-    return $ replaceSquare (board st) (si2sq (movesNext st)) 
+    return $ replEl (board st) (si2sq (movesNext st)) 
       (snd (blank !! newSquare))
   where blank = filter(\x -> fst x == B) (indexBoard (board st))
 
@@ -92,30 +92,27 @@ opp x | x == XSide = OSide
 --playerPick :: Board -> Square -> AI -> (Board, Square)
 playerPick s = do
   printBoard $ board s
-  putStrLn "Choose a numbered square"
-  t <- getNextChar 
-  return $ (take t $ board s) ++ 
-    (si2sq(movesNext s):(drop (t + 1) (board s)))
+  t <- putStrLn "Choose a numbered square" >> getNextSq 
+  return $ replEl (board s) (si2sq$movesNext s) t
 
-getNextChar :: IO Int
-getNextChar = do
+getNextSq :: IO Int
+getNextSq = do
   c <- getChar
   if not $ isDigit c
-  then getNextChar
+  then getNextSq
   else return $ digitToInt c
 
 fullBoard :: Board -> Bool
-fullBoard = all (flip elem [O,X]) 
+fullBoard = all (`elem` [O,X]) 
 
 side2Square x | x == XSide = X
               | x == OSide = O
 
 win :: Board -> Square -> (Square,Bool)
 win b s =  (s, or
-      --(
-        (((\f i -> checkRow (f b i) s) <$> [col,row] <*> [1,2,3])
-         ++ ((\f -> checkRow (f b) s) <$> [diag1,diag2])))
-      where checkRow x y = all(== y) x
+        (((\f i -> checkRow s (f b i) ) <$> [col,row] <*> [1,2,3])
+         ++ ((\f -> checkRow s (f b)) <$> [diag1,diag2])))
+      where checkRow sq = all (== sq) 
             col b i = (\z -> b!!(i+z)) <$> [-1,2,5] 
             diag1 b = (b!!) <$> [0,4,8]
             diag2 b = (b!!) <$> [2,4,6] 
@@ -123,11 +120,11 @@ win b s =  (s, or
 
 --nextMove :: Board -> Side -> [Board]   
 nextMove b s = let sqToTest = filter (\x -> fst x == B) $ indexBoard b
-      in  map (\x -> (replaceSquare b (si2sq s) (snd x),snd x)) sqToTest
+      in  map (\x -> (replEl b (si2sq s) (snd x),snd x)) sqToTest
 nMoveWin s b = filter(\x -> snd $ win (fst x) s) (nextMove b $ sq2si s)
 
-replaceSquare :: Board -> Square -> Int -> Board
-replaceSquare b s x = take x b ++ [s] ++ drop(1 + x) b
+replEl :: [a] -> a -> Int -> [a]
+replEl xs x i = take i xs ++ [x] ++ drop(1 + i) xs
 
 gameOverNoWinner :: Board -> Maybe Bool
 gameOverNoWinner b = if fullBoard b
