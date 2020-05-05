@@ -34,7 +34,7 @@ winBoard = [X,B,O,O,X,O,B,B,X]
 
 --- functions ---
 choseSide :: Char -> IO Char
-choseSide x = if (x `elem` ['X','O'])
+choseSide x = if x `elem` ['X','O']
   then  return x
   else  putStrLn "Choose a side (X) or (O)" >> getChar >>= choseSide 
 
@@ -52,7 +52,7 @@ play =
 execMove = 
   do
     st <- get
-    if (ai st == movesNext st)
+    if ai st == movesNext st
     then update chooseMove st 
     else update playerPick st 
   where
@@ -63,27 +63,27 @@ execMove =
         , ai = ai currState}
         play
 blockOpp st = nMoveWin ((si2sq . opp . ai) st) (board st)
-chooseMove st = if ((length winningMove) /= 0)
+chooseMove st = if (not . null) winningMove
                 then return $ head winningMove
                 else randomMove st
                 where winningMove = map fst $ nMoveWin (si2sq (ai st)) (board st)
 
 safeHead :: [a] -> Maybe a
-safeHead x | length x == 0 = Nothing
+safeHead x | null x = Nothing
            | otherwise     = Just $ head x
 randomMove st = do
     newSquare <- (-1 +) <$> randomRIO(1, length blank)  
     return $ replaceSquare (board st) (si2sq (movesNext st)) 
       (snd (blank !! newSquare))
-  where blank = filter(\x -> (fst x == B)) (indexBoard (board st))
+  where blank = filter(\x -> fst x == B) (indexBoard (board st))
 
 indexBoard :: Board -> [(Square,Int)]
-indexBoard b = zipWith (\x y -> (x,y)) b [0 ..]
+indexBoard = flip zip [0 ..]
 
 initState :: Char -> GameState
 initState s = GameState{board = newBoard
   , movesNext = XSide
-  , ai = if (s == 'X') then OSide else XSide}
+  , ai = if s == 'X' then OSide else XSide}
   
 opp :: Side -> Side 
 opp x | x == XSide = OSide
@@ -95,27 +95,27 @@ playerPick s = do
   putStrLn "Choose a numbered square"
   t <- getNextChar 
   return $ (take t $ board s) ++ 
-    ((si2sq(movesNext s)):(drop (t + 1) (board s)))
+    (si2sq(movesNext s):(drop (t + 1) (board s)))
 
 getNextChar :: IO Int
 getNextChar = do
   c <- getChar
-  if (not $ isDigit c)
+  if not $ isDigit c
   then getNextChar
   else return $ digitToInt c
 
 fullBoard :: Board -> Bool
-fullBoard x = all (\y -> y `elem` [O,X]) x
+fullBoard = all (flip elem [O,X]) 
 
 side2Square x | x == XSide = X
               | x == OSide = O
 
 win :: Board -> Square -> (Square,Bool)
-win b s =  (s, any (== True) 
+win b s =  (s, or
       --(
         (((\f i -> checkRow (f b i) s) <$> [col,row] <*> [1,2,3])
          ++ ((\f -> checkRow (f b) s) <$> [diag1,diag2])))
-      where checkRow x y = all(\z -> z == y) x
+      where checkRow x y = all(== y) x
             col b i = (\z -> b!!(i+z)) <$> [-1,2,5] 
             diag1 b = (b!!) <$> [0,4,8]
             diag2 b = (b!!) <$> [2,4,6] 
