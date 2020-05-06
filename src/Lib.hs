@@ -47,7 +47,8 @@ play =
     if snd $ win (fst $ lastStatus s) (si2sq $ snd $ lastStatus s)
     then return $ lastStatus s
     else execMove 
-    where lastStatus x = (board x, opp $ movesNext x)
+    where lastStatus s = (board s, opp $ movesNext s)
+--          gameWon = snd $ win (fst . lastStatus) (si2sq . snd . lastStatus)
 
 execMove = 
   do
