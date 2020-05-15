@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import TicTacToe
 
 main :: IO ()
 main = do
@@ -8,9 +8,7 @@ main = do
         putStrLn $ "You chose:\t" ++ show s
         (x,y) <- mainLoop s
         putStrLn "Game Over.  Thanks for playing!"
-        putStrLn "--------------"
-        putStrLn ""
-        putStrLn  $ "The game was won by\t" ++ show y
-        putStrLn ""
+        putStrLn "--------------\n"
+        putStrLn  $ "The game was won by " ++ show y ++ "\n"
         printBoard x
 

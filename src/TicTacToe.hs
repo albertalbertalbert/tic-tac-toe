@@ -1,7 +1,9 @@
-module Lib
+module TicTacToe
 ( printBoard
   , chooseSide
   , mainLoop
+  , win
+  , Square ( .. )
   ) where
 
 --- Imports ---
@@ -10,13 +12,12 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.State
 import System.Random
 import Data.Char
+import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.Class
+import Control.Applicative
 
 --- data and type definitions ---
-data Square =  X | O | B deriving (Eq)
-instance Show Square where
-  show X = "X"
-  show O = "O"
-  show B = " "
+data Square =  X | O | B deriving (Eq,Show)
 
 type Board = [Square]
 
@@ -26,19 +27,24 @@ data GameState = GameState {board :: Board
     ,ai :: Side}
     deriving Show
 
-    
-
 newBoard :: Board
 newBoard = [B,B,B,B,B,B,B,B,B]
 winBoard = [X,B,O,O,X,O,B,B,X]
-
+type MoveResult a = MaybeT (StateT GameState IO) a
 --- functions ---
+
+mainLoop = evalStateT play . initState
+
 chooseSide :: Char -> IO Char
 chooseSide x = if toUpper x `elem` ['X','O']
   then  return $ toUpper x
   else  putStrLn "Choose a side (X) or (O)" >> getChar >>= chooseSide 
 
-mainLoop = evalStateT play . initState
+play' :: MoveResult (Board, Side)
+play' = undefined
+
+performState :: StateT GameState IO a -> MoveResult a
+performState = lift
 
 play :: StateT GameState IO (Board,Side)
 play = 
@@ -48,35 +54,40 @@ play =
     then return $ lastStatus s
     else execMove 
     where lastStatus s = (board s, opp $ movesNext s)
---          gameWon = snd $ win (fst . lastStatus) (si2sq . snd . lastStatus)
 
 execMove = 
   do
     st <- get
     if ai st == movesNext st
-    then update chooseMove st 
+    then update chooseMove' st 
     else update playerPick st 
   where
-    update f currState = 
-      do
-        upd <- liftIO $ f currState
-        put GameState{board = upd, movesNext = opp $ movesNext currState
-        , ai = ai currState}
-        play
-blockOpp st = nMoveWin ((si2sq . opp . ai) st) (board st)
-chooseMove st = if (not . null) winningMove
-                then return $ head winningMove
-                else randomMove st
-                where winningMove = map fst $ nMoveWin (si2sq (ai st)) (board st)
+    update f st = 
+      (liftIO $ f st) >>= \x -> put GameState{board = x
+        , movesNext = opp $ movesNext st, ai = ai st} >> play
+
+blockOpp st = safeHead (map snd $ nMoveWin ((si2sq . opp . ai) st) (board st))
+
+winNext st = safeHead $ map snd $ nMoveWin ((si2sq . ai) st) (board st)
+
+chooseMove' st = let  choice = winNext st <|> blockOpp st
+                      next = replEl (board st) (si2sq (ai st)) 
+  in case choice of Just k -> return $ next k
+                    Nothing -> do
+                                  k <- randomMove' st 
+                                  return $ next k
 
 safeHead :: [a] -> Maybe a
-safeHead x | null x = Nothing
-           | otherwise     = Just $ head x
-randomMove st = do
-    newSquare <- (-1 +) <$> randomRIO(1, length blank)  
-    return $ replEl (board st) (si2sq (movesNext st)) 
-      (snd (blank !! newSquare))
-  where blank = filter(\x -> fst x == B) (indexBoard (board st))
+safeHead x | null x     = Nothing
+           | otherwise  = Just $ head x
+
+randomMove' :: GameState -> IO Int
+randomMove' st = do
+  s <- randomRIO(0,length blank -1) 
+  return $ snd ( blank !! s )
+  where blank = openSquares st
+
+openSquares st = filter ((== B) . fst) (indexBoard $ board st)
 
 indexBoard :: Board -> [(Square,Int)]
 indexBoard = flip zip [0 ..]
@@ -106,9 +117,6 @@ getNextSq = do
 fullBoard :: Board -> Bool
 fullBoard = all (`elem` [O,X]) 
 
-side2Square x | x == XSide = X
-              | x == OSide = O
-
 win :: Board -> Square -> (Square,Bool)
 win b s =  (s, or
         (((\f i -> checkRow s (f b i) ) <$> [col,row] <*> [1,2,3])
@@ -117,11 +125,13 @@ win b s =  (s, or
             col b i = (\z -> b!!(i+z)) <$> [-1,2,5] 
             diag1 b = (b!!) <$> [0,4,8]
             diag2 b = (b!!) <$> [2,4,6] 
-            row b i = take 3 $ drop ((i-1) * 2) b
+            row b i = take 3 $ drop ((i-1) * 3) b
 
---nextMove :: Board -> Side -> [Board]   
+nextMove :: Board -> Side -> [(Board, Int)]   
 nextMove b s = let sqToTest = filter (\x -> fst x == B) $ indexBoard b
       in  map (\x -> (replEl b (si2sq s) (snd x),snd x)) sqToTest
+
+nMoveWin :: Square -> Board -> [(Board, Int)]   
 nMoveWin s b = filter(\x -> snd $ win (fst x) s) (nextMove b $ sq2si s)
 
 replEl :: [a] -> a -> Int -> [a]
@@ -129,8 +139,9 @@ replEl xs x i = take i xs ++ [x] ++ drop(1 + i) xs
 
 gameOverNoWinner :: Board -> Maybe Bool
 gameOverNoWinner b = if fullBoard b
-      then Just (snd ( win b O) || snd (win b X))
+      then Just $ not (snd ( win b O) || snd (win b X))
       else Nothing
+
 sq2si :: Square -> Side
 sq2si x = if x == O then OSide else XSide
 
@@ -139,14 +150,15 @@ si2sq x = if x == XSide then X else O
 
 --- Functions for output ---
 makeLine :: Board -> Int -> String
-makeLine line index = x ++ " | " ++ y ++ " | " ++ z
+makeLine line row = x ++ " | " ++ y ++ " | " ++ z
   where x = showSquare 0
         y = showSquare 1
         z = showSquare 2
         showSquare pos = if line!!pos == B 
-                    then show (index + pos) 
+                    then show (row + pos) 
                     else show $ line!!pos
 
+printBoard :: Board -> IO()
 printBoard b = do
   putStrLn $ makeLine (take 3 b) 0
   putStrLn separator
@@ -154,7 +166,4 @@ printBoard b = do
   putStrLn separator
   putStrLn $ makeLine (take 3  $ drop 6 b) 6
   where   separator = "---------"
-          showSquare line row pos = if line!!pos == B 
-            then show (row + pos) 
-            else show $ line!!pos
 
